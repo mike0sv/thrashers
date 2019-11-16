@@ -1,10 +1,33 @@
+import math
+import random
+import time
+from collections import defaultdict
+from functools import wraps
 from threading import Thread, Lock
 from typing import List, Tuple, Dict
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
+from flask_caching import Cache
+from flask_cors import CORS
 from pyjackson import serialize
 
 from listener import PikaCon
+
+_agent_cache: Dict[str, 'Agent'] = {}
+_sectors_cache = defaultdict(set)
+HAVE_PATIENT_ZERO = False
+lock = Lock()
+
+SECTOR_SIZE = 30
+SECTORS_ROW_LENGTH = 100
+FLOOR_SECTORS = 100000
+DIST_TH = 10
+RECOLOR_TIMEOUT = .5
+
+app = Flask(__name__)
+cache = Cache(config={'CACHE_TYPE': 'simple'})
+CORS(app)
+cache.init_app(app)
 
 
 class Role:
@@ -18,41 +41,56 @@ class Role:
 class Agent:
     MAX_HISTORY = 5
     FLOOR_MAPPING = {
-        'Otaniemi>Väre>0': 'vare_0',
-        'Otaniemi>Väre>1': 'vare_1',
-        'Otaniemi>Väre>2': 'vare_2',
-        'Otaniemi>Väre>3': 'vare_3',
+        'Otaniemi>Väre>0': 0,
+        'Otaniemi>Väre>1': 20,
+        'Otaniemi>Väre>2': 40,
+        'Otaniemi>Väre>3': 60,
     }
 
-    def __init__(self, mac: str, coord: Tuple[float, float], history: List[Tuple[float, float, str]], role: str,
-                 last_updated: int, floor: str):
-        self.floor = floor
+    def __init__(self, mac: str, coord: Tuple[float, float, int], role: str,
+                 last_updated: int):
         self.last_updated = last_updated
         self.mac = mac
         self.coord = coord
-        self.history = history
+        self.history: List[Tuple[float, float, int]] = []
         self.role = role
+
+    @property
+    def sector(self):
+        if self.coord is None:
+            return None
+        x, y, floor = self.coord
+        sx, sy = x // SECTOR_SIZE, y // SECTOR_SIZE
+        return sy * SECTORS_ROW_LENGTH + sx + floor * FLOOR_SECTORS
 
     @classmethod
     def create(cls, notification):
+        global HAVE_PATIENT_ZERO
         mac = notification['mac']
-        agent = Agent(mac, None, [], Role.DEFAULT, None, None)
+        agent = Agent(mac, None, Role.DEFAULT, None)
+        if not HAVE_PATIENT_ZERO:
+            HAVE_PATIENT_ZERO = True
+            agent.role = Role.INFECTED
         agent.update(notification)
         return agent
 
     def update(self, notification):
         self.last_updated = notification['timestamp']
-        coord = notification['x'], notification['y']
-        floor = self.FLOOR_MAPPING[notification['floor']]
-        self.floor = floor
-        if coord != self.coord:
-            self.coord = coord
-            self.history.append(coord + (floor,))
-            self.history = self.history[-self.MAX_HISTORY:]
+        coord = notification['x'], notification['y'], self.FLOOR_MAPPING[notification['floor']]
+        self._update_coord(coord)
 
+    def _update_coord(self, coord):
+        with lock:
+            if coord != self.coord:
+                try:
+                    _sectors_cache[self.sector].remove(self.mac)
+                except KeyError:
+                    pass
 
-_agent_cache: Dict[str, Agent] = {}
-lock = Lock()
+                self.coord = coord
+                _sectors_cache[self.sector].add(self.mac)
+                self.history.append(coord)
+                self.history = self.history[-self.MAX_HISTORY:]
 
 
 def notification_valid(notification):
@@ -60,7 +98,6 @@ def notification_valid(notification):
 
 
 def update_handler(notification):
-    print(len(_agent_cache))
     if not notification_valid(notification):
         return
     mac = notification['mac']
@@ -81,17 +118,109 @@ def start_thread(target):
     t.start()
 
 
-app = Flask(__name__)
+#  ------------------------------------------
+
+
+def _near_sectors(agent: Agent):
+    center = agent.sector
+    return [center - 1 - SECTORS_ROW_LENGTH,
+            center - SECTORS_ROW_LENGTH,
+            center - SECTORS_ROW_LENGTH + 1,
+            center - 1,
+            center,
+            center + 1,
+            center - 1 + SECTORS_ROW_LENGTH,
+            center + SECTORS_ROW_LENGTH,
+            center + 1 + SECTORS_ROW_LENGTH]
+
+
+def objs_dist(coord1, coord2):
+    x1, y1, floor1 = coord1
+    x2, y2, floor2 = coord2
+    if floor1 != floor2:
+        return 9999
+    return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
+
+def timeit(f):
+    @wraps(f)
+    def inner(*args, **kwargs):
+        start = time.time()
+        r = f(*args, **kwargs)
+        print(f.__name__, 'in', f'{time.time() - start:2f}')
+        return r
+
+    return inner
+
+
+@timeit
+def recolor():
+    to_infect = []
+    with lock:
+        for mac, agent in _agent_cache.items():
+            if agent.role == Role.PASSIVE:
+                continue
+            elif agent.role == Role.INFECTED:
+                for sec in _near_sectors(agent):
+                    for mac2 in _sectors_cache[sec]:
+                        agent2 = _agent_cache[mac2]
+                        if mac == mac2 or agent2.role == Role.INFECTED:
+                            continue
+                        if objs_dist(agent.coord, agent2.coord) < DIST_TH:
+                            to_infect.append(mac2)
+
+    for mac in to_infect:
+        _agent_cache[mac].role = Role.INFECTED
+
+
+def recolor_thread():
+    while True:
+        recolor()
+        time.sleep(RECOLOR_TIMEOUT)
 
 
 @app.route('/actors')
+@cache.cached(timeout=.5)
 def get_actors():
     with lock:
         return jsonify(serialize(_agent_cache, Dict[str, Agent]))
 
 
+@app.route('/infect')
+def infect():
+    mac = request.args.get('mac', None)
+    if mac is None:
+        with lock:
+            mac = random.choice(list(_agent_cache.keys()))
+
+    _agent_cache[mac].role = Role.INFECTED
+    return 'ok'
+
+
+@app.route('/heal_all')
+def heal_all():
+    with lock:
+        for agent in _agent_cache.values():
+            agent.role = Role.PASSIVE
+
+    return 'ok'
+
+
+@app.route('/distance')
+def get_distance():
+    return str(DIST_TH)
+
+
+@app.route('/distance', methods=['POST'])
+def set_distance():
+    global DIST_TH
+    DIST_TH = float(request.form.get('distance', DIST_TH))
+    return 'ok'
+
+
 def main():
     start_thread(update_thread)
+    start_thread(recolor_thread)
     app.run('0.0.0.0')
 
 

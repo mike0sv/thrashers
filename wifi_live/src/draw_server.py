@@ -42,6 +42,19 @@ def obj_sector(xy):
     return sy * SECTORS_ROW_LENGTH + sx
 
 
+def _near_sectors(coords):
+    center = obj_sector(coords)
+    return [center - 1 - SECTORS_ROW_LENGTH,
+            center - SECTORS_ROW_LENGTH,
+            center - SECTORS_ROW_LENGTH + 1,
+            center - 1,
+            center,
+            center + 1,
+            center - 1 + SECTORS_ROW_LENGTH,
+            center + SECTORS_ROW_LENGTH,
+            center + 1 + SECTORS_ROW_LENGTH]
+
+
 def objs_dist(coord1, coord2):
     x1, y1 = coord1
     x2, y2 = coord2
@@ -82,18 +95,6 @@ class State:
                     HAVE_PATIENT_ZERO = True
             self.last_updated[mac] = obj['timestamp']
 
-    def _near_sectors(self, coords):
-        center = obj_sector(coords)
-        return [center - 1 - SECTORS_ROW_LENGTH,
-                center - SECTORS_ROW_LENGTH,
-                center - SECTORS_ROW_LENGTH + 1,
-                center - 1,
-                center,
-                center + 1,
-                center - 1 + SECTORS_ROW_LENGTH,
-                center + SECTORS_ROW_LENGTH,
-                center + 1 + SECTORS_ROW_LENGTH]
-
     def recolor(self):
         with self.lock:
             to_infest = []
@@ -102,7 +103,7 @@ class State:
                     continue
 
                 obj_coord = self.current_location[mac]
-                for sec in self._near_sectors(obj_coord):
+                for sec in _near_sectors(obj_coord):
                     for mac2 in self.sectors[sec]:
                         if mac == mac2 or self.current_state[mac2] != 'red':
                             continue
