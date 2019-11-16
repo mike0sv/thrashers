@@ -106,10 +106,10 @@ class Agent:
         global HAVE_PATIENT_ZERO
         mac = notification['mac']
         agent = Agent(mac, None, Role.DEFAULT, None)
+        agent.update(notification)
         if not HAVE_PATIENT_ZERO:
             HAVE_PATIENT_ZERO = True
             agent.infect()
-        agent.update(notification)
         return agent
 
     def update(self, notification):
