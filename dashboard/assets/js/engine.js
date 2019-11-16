@@ -2,6 +2,7 @@ const IMG_SCALE = 0.46;
 const IMG_SHIFT_X = 0;
 const IMG_SHIFT_Y = 0;
 const CANVAS_HEIGHT = 700;
+const DISTANCE_THRESHOLD = 10;
 
 var layerShift = 0;
 
@@ -18,6 +19,7 @@ const COORD_SCALE = 1.63;
 
 const textColor = '#F18021';
 const purple = '#770578';
+const blue = '#35E2DF';
 const colors = {
     infected: '#F18021',
     passive: '#770578',
@@ -29,6 +31,8 @@ var ctx = null;
 var phase = 0;
 var layerShiftPhase = 0;
 var loading = false;
+
+var macHover = null;
 
 var floor = 20;
 var targetFloor = null;
@@ -195,6 +199,30 @@ function draw() {
     }
     addTextInfo();
     drawLayers();
+    addMacDialog();
+}
+
+function addMacDialog() {
+    if (!macHover) return;
+
+    const point = points[macHover];
+    const x = point.coord[X];
+    const y = point.coord[Y];
+    const size = POINTS_SIZE;
+
+    ctx.fillStyle = colors[point.role];
+    ctx.fillRect(x * COORD_SCALE + 8, y * COORD_SCALE - 24 + layerShift, 100, 10);
+
+    ctx.moveTo(x * COORD_SCALE + 8, y * COORD_SCALE - 24 + layerShift + 7);
+    ctx.beginPath();
+    ctx.lineTo(x * COORD_SCALE + size / 2, y * COORD_SCALE - size / 2 + layerShift);
+    ctx.lineTo(x * COORD_SCALE + 12, y * COORD_SCALE - 24 + layerShift + 10);
+    ctx.lineTo(x * COORD_SCALE + 8, y * COORD_SCALE - 24 + layerShift + 7);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#000";
+    ctx.fillText(macHover, x * COORD_SCALE + 16, y * COORD_SCALE - 15 + layerShift);
 }
 
 function addTextInfo() {
@@ -206,6 +234,7 @@ function addTextInfo() {
     ctx.fillStyle = textColor;
     ctx.fillText("People infected: " + stats[floor].infected, 850, 70);
     ctx.fillRect(835, 63, 7, 7);
+    // ctx.fillText("MAC: " + macHover, 850, 90);
 }
 
 function infect() {
@@ -360,9 +389,30 @@ function loadBackground() {
     background1.src = 'images/floor1.jpg';
 }
 
+function findClosestPoint(x, y) {
+    x = x / COORD_SCALE;
+    y = y / COORD_SCALE;
+    var minDistance = DISTANCE_THRESHOLD;
+    var minMac = null;
+    var minPoint = null;
+    Object.values(points).forEach(point => {
+        if(point.coord[Z] !== floor) return;
+        const distance = Math.sqrt((point.coord[X] - x) * (point.coord[X] - x) + (point.coord[Y] - y) * (point.coord[Y] - y));
+        if (distance < minDistance) {
+            minMac = point.mac;
+            minPoint = point;
+            minDistance = distance;
+        }
+    });
+    macHover = minMac;
+}
+
 function setupCanvas() {
     canvas = document.getElementById('floor1');
     canvas.addEventListener("mouseup", function (e) {
+        getMousePosition(canvas, e);
+    });
+    canvas.addEventListener("mousemove", function (e) {
         getMousePosition(canvas, e);
     });
     ctx = canvas.getContext('2d');
@@ -379,6 +429,7 @@ function getMousePosition(canvas, event) {
     let rect = canvas.getBoundingClientRect();
     let x = event.clientX - rect.left;
     let y = event.clientY - rect.top;
+    findClosestPoint(x, y);
     handleMouse(x, y);
 }
 
