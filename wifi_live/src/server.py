@@ -13,6 +13,22 @@ from pyjackson import serialize
 
 from listener import PikaCon
 
+_agent_cache: Dict[str, 'Agent'] = {}
+_sectors_cache = defaultdict(set)
+HAVE_PATIENT_ZERO = False
+lock = Lock()
+
+SECTOR_SIZE = 30
+SECTORS_ROW_LENGTH = 100
+FLOOR_SECTORS = 100000
+DIST_TH = 10
+RECOLOR_TIMEOUT = .5
+
+app = Flask(__name__)
+cache = Cache(config={'CACHE_TYPE': 'simple'})
+CORS(app)
+cache.init_app(app)
+
 
 class Role:
     PASSIVE = 'passive'
@@ -76,12 +92,6 @@ class Agent:
             self.history = self.history[-self.MAX_HISTORY:]
 
 
-_agent_cache: Dict[str, Agent] = {}
-_sectors_cache = defaultdict(set)
-HAVE_PATIENT_ZERO = False
-lock = Lock()
-
-
 def notification_valid(notification):
     return notification['floor'] in Agent.FLOOR_MAPPING
 
@@ -108,11 +118,6 @@ def start_thread(target):
 
 
 #  ------------------------------------------
-SECTOR_SIZE = 30
-SECTORS_ROW_LENGTH = 100
-FLOOR_SECTORS = 100000
-DIST_TH = 20
-RECOLOR_TIMEOUT = 5
 
 
 def _near_sectors(agent: Agent):
@@ -165,19 +170,12 @@ def recolor():
 
     for mac in to_infect:
         _agent_cache[mac].role = Role.INFECTED
-        print(mac, 'INFECTED!!!!')
 
 
 def recolor_thread():
     while True:
         recolor()
         time.sleep(RECOLOR_TIMEOUT)
-
-
-app = Flask(__name__)
-cache = Cache(config={'CACHE_TYPE': 'simple'})
-CORS(app)
-cache.init_app(app)
 
 
 @app.route('/actors')
