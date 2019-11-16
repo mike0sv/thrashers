@@ -4,6 +4,9 @@ const IMG_SHIFT_Y = 0;
 const CANVAS_HEIGHT = 700;
 const DISTANCE_THRESHOLD = 10;
 
+const MEDICINE_X = 802;
+const MEDICINE_Y = 53;
+
 var layerShift = 0;
 
 const REFRESH_PERIOD = 10;
@@ -187,7 +190,7 @@ function nextPhase(apiPoints) {
     }
     for (var mac in macsToDelete) {
         console.log('DELETING MAC', mac);
-        delete points[mac];
+        points[mac] = undefined;
     }
     loading = false;
     phase = 0;
@@ -246,6 +249,7 @@ function draw() {
     addTextInfo();
     drawLayers();
     addMacDialog();
+    drawMedicine(MEDICINE_X, MEDICINE_Y);
 }
 
 function addMacDialog() {
@@ -278,7 +282,7 @@ function addTextInfo() {
     ctx.fillStyle = purple;
     ctx.fillRect(835, 43, 7, 7);
     ctx.fillStyle = textColor;
-    ctx.fillText("People infected: " + stats[floor].infected, 850, 70);
+    ctx.fillText("Infected people: " + stats[floor].infected, 850, 70);
     ctx.fillRect(835, 63, 7, 7);
     // ctx.fillText("MAC: " + macHover, 850, 90);
 }
@@ -494,6 +498,12 @@ function handleMouse(xM, yM) {
             return;
         }
         y += LAYER_CONF.shift;
+    }
+
+    if(xM > MEDICINE_X - CROSS_SIZE / 2 && xM < MEDICINE_X + CROSS_SIZE / 2
+    && yM > MEDICINE_Y - CROSS_SIZE / 2 && yM < MEDICINE_Y + CROSS_SIZE /2) {
+        heal();
+        return;
     }
 
     const mac = findClosestPoint(xM, yM);
