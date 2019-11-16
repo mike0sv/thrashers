@@ -201,10 +201,10 @@ def get_actors():
 @app.route('/infect')
 def infect():
     mac = request.args.get('mac', None)
-    floor = request.args.get('floor', None)
+    floor = int(request.args.get('floor', -99))
     if mac is None:
         with lock:
-            macs = [k for k, v in _agent_cache.items() if floor is None or v.coord[2] == floor]
+            macs = [k for k, v in _agent_cache.items() if floor == -99 or v.coord[2] == floor]
             mac = random.choice(macs)
 
     _agent_cache[mac].role = Role.INFECTED
