@@ -37,6 +37,8 @@ if REPORT_DATA:
 else:
     reporter = None
 
+INFECTION_START = time.time()
+
 app = Flask(__name__)
 cache = Cache(config={'CACHE_TYPE': 'simple'})
 CORS(app)
@@ -66,7 +68,30 @@ class Agent:
         self.mac = mac
         self.coord = coord
         self.history: List[Tuple[float, float, int]] = []
-        self.role = role
+        self._role = role
+        self.creation_time = last_updated
+        self.infection_time = None
+
+    def infect(self):
+        self.infection_time = time.time()
+        self._role = Role.INFECTED
+        if REPORT_DATA:
+            reporter.report_infection(self)
+
+    def cure(self):
+        self.creation_time = time.time()
+        self.infection_time = None
+        self._role = Role.PASSIVE
+
+    @property
+    def survived_for(self):
+        if self.infection_time is None:
+            return int(time.time() - self.creation_time)
+        return int(self.infection_time - self.creation_time)
+
+    @property
+    def role(self):
+        return self._role
 
     @property
     def sector(self):
@@ -83,7 +108,7 @@ class Agent:
         agent = Agent(mac, None, Role.DEFAULT, None)
         if not HAVE_PATIENT_ZERO:
             HAVE_PATIENT_ZERO = True
-            agent.role = Role.INFECTED
+            agent.infect()
         agent.update(notification)
         return agent
 
@@ -117,11 +142,15 @@ def update_handler(notification):
     if not notification_valid(notification):
         return
     mac = notification['mac']
-    if mac not in _agent_cache:
+    is_new_agent = mac not in _agent_cache
+    if is_new_agent:
         with lock:
             _agent_cache[mac] = Agent.create(notification)
+
     else:
         _agent_cache[mac].update(notification)
+    if REPORT_DATA:
+        reporter.report_event(_agent_cache[mac], is_new_agent)
 
 
 def update_thread():
@@ -210,7 +239,7 @@ def recolor():
                             to_infect.append(mac2)
 
     for mac in to_infect:
-        _agent_cache[mac].role = Role.INFECTED
+        _agent_cache[mac].infect()
 
 
 def recolor_thread():
@@ -238,16 +267,17 @@ def infect():
             macs = [k for k, v in _agent_cache.items() if floor == -99 or v.coord[2] == floor]
             mac = random.choice(macs)
 
-    _agent_cache[mac].role = Role.INFECTED
+    _agent_cache[mac].infect()
     return mac
 
 
 @app.route('/heal_all')
 def heal_all():
+    global INFECTION_START
     with lock:
         for agent in _agent_cache.values():
-            agent.role = Role.PASSIVE
-
+            agent.cure()
+    INFECTION_START = time.time()
     return 'ok'
 
 
@@ -268,6 +298,11 @@ def get_threads():
     return jsonify(
         {t.name: str(t) for t in threading.enumerate()}
     )
+
+
+@app.route('/start_time')
+def get_infection_start():
+    return str(int(INFECTION_START))
 
 
 def main():

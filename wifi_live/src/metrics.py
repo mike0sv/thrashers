@@ -24,28 +24,40 @@ class Reporter:
     def renew_measurement(self):
         self.measurement = f'run_{int(time.time())}'
 
+    def _row(self, measurement, tags, fields, timestamp=None):
+        timestamp = timestamp or int(time.time())
+        return {
+            "measurement": measurement,
+            "tags": tags,
+            "time": timestamp,
+            "fields": fields
+        }
+
     def report_all(self, agents: Iterable['Agent']):
         infected = sum(1 for a in agents if a.role == Role.INFECTED)
         not_infected = sum(1 for a in agents if a.role == Role.PASSIVE)
         if infected == 0 and not_infected == 0:
             not_infected = 1
         points = [
-            {
-                "measurement": DB_TOTAL,
-                "tags": {
-                    "run": self.measurement
-                },
-                "time": int(time.time()),
-                "fields": {
-                    'infected': infected,
-                    'not_infected': not_infected,
-                    'infected_share': infected / (infected + not_infected)
-                }
-            }
+            self._row(DB_TOTAL, {"run": self.measurement}, {
+                'infected': infected,
+                'not_infected': not_infected,
+                'infected_share': infected / (infected + not_infected)
+            })
         ]
         self.client.write_points(points, time_precision='s')
 
-    def report_new(self):
-        pass
+    def report_event(self, agent: 'Agent', new=False):
+        points = [
+            self._row('events', {'mac': agent.mac, 'new': new}, {}, agent.last_updated)
+        ]
+        self.client.write_points(points, time_precision='s')
+
+    def report_infection(self, agent: 'Agent'):
+        points = [
+            self._row('infections', {'mac': agent.mac}, {'survived': agent.survived_for})
+        ]
+        self.client.write_points(points, time_precision='s')
+
 
 from server import Agent, Role
