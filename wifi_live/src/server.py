@@ -196,7 +196,7 @@ def recolor():
     to_infect = []
     with lock:
         if REPORT_DATA:
-            reporter.report(_agent_cache.values())
+            reporter.report_all(_agent_cache.values())
         for mac, agent in _agent_cache.items():
             if agent.role == Role.PASSIVE:
                 continue

@@ -49,7 +49,7 @@ def get_objs():
     try:
         return json.loads(b'[' + content[:-2] + b']')
     except json.decoder.JSONDecodeError:
-        print('CORRUPTED', content)
+        print('CORRUPTED')
 
 
 def listen_loop(handler):
@@ -106,7 +106,7 @@ def main():
     con = PikaCon()
 
     def handler(obj):
-        print(get_id(obj))
+        # print(get_id(obj))
         con.send(transform(obj))
 
     listen_loop(handler)
