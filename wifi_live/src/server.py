@@ -18,7 +18,6 @@ from listener import PikaCon
 
 _agent_cache: Dict[str, 'Agent'] = {}
 _sectors_cache = defaultdict(set)
-HAVE_PATIENT_ZERO = False
 lock = Lock()
 _treads: List[Thread] = []
 
@@ -26,6 +25,9 @@ SECTOR_SIZE = 30
 SECTORS_ROW_LENGTH = 100
 FLOOR_SECTORS = 100000
 DIST_TH = 10
+HAVE_PATIENT_ZERO = False
+MAX_UPDATE_DISTANCE = 100
+MAX_UPDATE_TIMEOUT = 300
 RECOLOR_TIMEOUT = .5
 
 app = Flask(__name__)
@@ -85,6 +87,10 @@ class Agent:
 
     def _update_coord(self, coord):
         if coord != self.coord:
+            if (self.coord is not None and
+                    objs_dist(self.coord, coord) > MAX_UPDATE_DISTANCE and
+                    time.time() - self.last_updated < MAX_UPDATE_TIMEOUT):
+                return
             try:
                 _sectors_cache[self.sector].remove(self.mac)
             except KeyError:
@@ -195,12 +201,14 @@ def get_actors():
 @app.route('/infect')
 def infect():
     mac = request.args.get('mac', None)
+    floor = request.args.get('floor', None)
     if mac is None:
         with lock:
-            mac = random.choice(list(_agent_cache.keys()))
+            macs = [k for k, v in _agent_cache.items() if floor is None or v.coord[2] == floor]
+            mac = random.choice(macs)
 
     _agent_cache[mac].role = Role.INFECTED
-    return 'ok'
+    return mac
 
 
 @app.route('/heal_all')
