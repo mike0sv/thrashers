@@ -157,7 +157,6 @@ def timeit(f):
     return inner
 
 
-@timeit
 def recolor():
     to_infect = []
     with lock:
