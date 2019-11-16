@@ -31,6 +31,7 @@ var ctx = null;
 var phase = 0;
 var layerShiftPhase = 0;
 var loading = false;
+var startup = true;
 
 var macHover = null;
 
@@ -67,18 +68,24 @@ const INFECT_URI = API_URI + '/infect';
 const HEAL_URI = API_URI + '/heal_all';
 
 var points = {};
-
+var spinnerPoints = [];
 
 function start() {
     setupCanvas();
     loadBackground();
+    setupSplashScreen();
 }
 
 window.onload = start;
 
 function reload() {
     calcStats();
-    draw();
+    if (startup) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawSplashScreen();
+    } else {
+        draw();
+    }
     if (targetFloor !== null) {
         if (layerShiftPhase > 0.5) {
             floor = targetFloor;
@@ -132,6 +139,15 @@ function loadNewPoints() {
 }
 
 function nextPhase(apiPoints) {
+    if (startup) {
+        layerShiftPhase = 0.5;
+        floor = 40;
+        targetFloor = 20;
+        floorScrollDirection = 1;
+        layerShift = -CANVAS_HEIGHT;
+    }
+    startup = false;
+
     for (let mac in points) {
         if (!points.hasOwnProperty(mac)) continue;
         points[mac].state = 'standing';
@@ -177,22 +193,52 @@ function nextPhase(apiPoints) {
     phase = 0;
 }
 
+var splashPhase = 0;
+
+function drawSplashScreen() {
+    ctx.fillStyle = textColor;
+    splashPhase += 0.1;
+    // ctx.fillText("Loading blueprints...", 400, 300);
+
+    for (var i = 0; i < SPLASH_COUNT; i++) {
+        spinnerPoints[i].coord[Y] = SPLASH_Y + Math.sin(splashPhase + i / 2) * SPLASH_AMPLITUDE;
+        // spinnerPoints[i].role = Math.sin(splashPhase + i / 2) >= 0 ? 'infected' : 'passive'
+    }
+    spinnerPoints.forEach(point => {
+        drawPoint(point);
+    })
+}
+
+const SPLASH_START_X = 180;
+const SPLASH_Y = 200;
+const SPLASH_AMPLITUDE = 10;
+const SPLASH_GAP = 20;
+const SPLASH_COUNT = 10;
+
+
+function setupSplashScreen() {
+    var x = SPLASH_START_X;
+    for (var i = 0; i < SPLASH_COUNT; i++) {
+        spinnerPoints.push({
+            coord: [x, SPLASH_Y, 20],
+            role: 'infected'
+        });
+        x += SPLASH_GAP;
+    }
+}
+
 function gotToFloor(floorRequest) {
-    console.log('targetFloor', floorRequest);
     if (floorRequest === floor) {
         return;
     }
     targetFloor = floorRequest;
     floorScrollDirection = -(floor - targetFloor) / Math.abs(floor - targetFloor);
-    console.log('floorScrollDirection', floorScrollDirection);
 }
 
 function draw() {
-    // console.log('draw');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(background1, IMG_SHIFT_X, IMG_SHIFT_Y + layerShift, background1.width * IMG_SCALE, background1.height * IMG_SCALE);
 
-    // console.log('drawing points', Object.keys(points).length , phase);
     for (let mac in points) {
         if (!points.hasOwnProperty(mac)) continue;
         drawPoint(points[mac]);
@@ -237,8 +283,12 @@ function addTextInfo() {
     // ctx.fillText("MAC: " + macHover, 850, 90);
 }
 
-function infect() {
-    $.get(INFECT_URI + '?floor=' + floor, infected);
+function infect(mac) {
+    if (!mac) {
+        $.get(INFECT_URI + '?floor=' + floor, infected);
+    } else {
+        $.get(INFECT_URI + '?floor=' + floor + '&mac=' + mac, infected);
+    }
 }
 
 function infected(data) {
@@ -389,31 +439,34 @@ function loadBackground() {
     background1.src = 'images/floor1.jpg';
 }
 
+function hoverClosestPoint(x, y) {
+    macHover = findClosestPoint(x, y);
+}
+
+
 function findClosestPoint(x, y) {
     x = x / COORD_SCALE;
     y = y / COORD_SCALE;
     var minDistance = DISTANCE_THRESHOLD;
     var minMac = null;
-    var minPoint = null;
     Object.values(points).forEach(point => {
-        if(point.coord[Z] !== floor) return;
+        if (point.coord[Z] !== floor) return;
         const distance = Math.sqrt((point.coord[X] - x) * (point.coord[X] - x) + (point.coord[Y] - y) * (point.coord[Y] - y));
         if (distance < minDistance) {
             minMac = point.mac;
-            minPoint = point;
             minDistance = distance;
         }
     });
-    macHover = minMac;
+    return minMac;
 }
 
 function setupCanvas() {
     canvas = document.getElementById('floor1');
     canvas.addEventListener("mouseup", function (e) {
-        getMousePosition(canvas, e);
+        getMousePosition(canvas, e, handleMouse);
     });
     canvas.addEventListener("mousemove", function (e) {
-        getMousePosition(canvas, e);
+        getMousePosition(canvas, e, hoverClosestPoint);
     });
     ctx = canvas.getContext('2d');
     var dpr = window.devicePixelRatio || 1;
@@ -425,12 +478,11 @@ function setupCanvas() {
     return ctx;
 }
 
-function getMousePosition(canvas, event) {
+function getMousePosition(canvas, event, method) {
     let rect = canvas.getBoundingClientRect();
     let x = event.clientX - rect.left;
     let y = event.clientY - rect.top;
-    findClosestPoint(x, y);
-    handleMouse(x, y);
+    method(x, y);
 }
 
 function handleMouse(xM, yM) {
@@ -443,6 +495,10 @@ function handleMouse(xM, yM) {
         }
         y += LAYER_CONF.shift;
     }
+
+    const mac = findClosestPoint(xM, yM);
+    if (!mac) return;
+    infect(mac);
 }
 
 function checkLayerClick(x, y, xM, yM) {
