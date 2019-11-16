@@ -1,6 +1,9 @@
 import math
 import random
+import sys
+import threading
 import time
+import traceback
 from collections import defaultdict
 from functools import wraps
 from threading import Thread, Lock
@@ -15,13 +18,16 @@ from listener import PikaCon
 
 _agent_cache: Dict[str, 'Agent'] = {}
 _sectors_cache = defaultdict(set)
-HAVE_PATIENT_ZERO = False
 lock = Lock()
+_treads: List[Thread] = []
 
 SECTOR_SIZE = 30
 SECTORS_ROW_LENGTH = 100
 FLOOR_SECTORS = 100000
 DIST_TH = 10
+HAVE_PATIENT_ZERO = False
+MAX_UPDATE_DISTANCE = 100
+MAX_UPDATE_TIMEOUT = 300
 RECOLOR_TIMEOUT = .5
 
 app = Flask(__name__)
@@ -80,17 +86,20 @@ class Agent:
         self._update_coord(coord)
 
     def _update_coord(self, coord):
-        with lock:
-            if coord != self.coord:
-                try:
-                    _sectors_cache[self.sector].remove(self.mac)
-                except KeyError:
-                    pass
+        if coord != self.coord:
+            if (self.coord is not None and
+                    objs_dist(self.coord, coord) > MAX_UPDATE_DISTANCE and
+                    time.time() - self.last_updated < MAX_UPDATE_TIMEOUT):
+                return
+            try:
+                _sectors_cache[self.sector].remove(self.mac)
+            except KeyError:
+                pass
 
-                self.coord = coord
-                _sectors_cache[self.sector].add(self.mac)
-                self.history.append(coord)
-                self.history = self.history[-self.MAX_HISTORY:]
+            self.coord = coord
+            _sectors_cache[self.sector].add(self.mac)
+            self.history.append(coord)
+            self.history = self.history[-self.MAX_HISTORY:]
 
 
 def notification_valid(notification):
@@ -114,8 +123,9 @@ def update_thread():
 
 
 def start_thread(target):
-    t = Thread(target=target, daemon=True)
+    t = Thread(target=target, name=target.__name__, daemon=True)
     t.start()
+    _treads.append(t)
 
 
 #  ------------------------------------------
@@ -153,7 +163,6 @@ def timeit(f):
     return inner
 
 
-@timeit
 def recolor():
     to_infect = []
     with lock:
@@ -175,7 +184,10 @@ def recolor():
 
 def recolor_thread():
     while True:
-        recolor()
+        try:
+            recolor()
+        except:
+            traceback.print_exc()
         time.sleep(RECOLOR_TIMEOUT)
 
 
@@ -189,12 +201,14 @@ def get_actors():
 @app.route('/infect')
 def infect():
     mac = request.args.get('mac', None)
+    floor = int(request.args.get('floor', -99))
     if mac is None:
         with lock:
-            mac = random.choice(list(_agent_cache.keys()))
+            macs = [k for k, v in _agent_cache.items() if floor == -99 or v.coord[2] == floor]
+            mac = random.choice(macs)
 
     _agent_cache[mac].role = Role.INFECTED
-    return 'ok'
+    return mac
 
 
 @app.route('/heal_all')
@@ -216,6 +230,13 @@ def set_distance():
     global DIST_TH
     DIST_TH = float(request.form.get('distance', DIST_TH))
     return 'ok'
+
+
+@app.route('/threads')
+def get_threads():
+    return jsonify(
+        {t.name: str(t) for t in threading.enumerate()}
+    )
 
 
 def main():
