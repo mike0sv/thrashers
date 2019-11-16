@@ -1,6 +1,7 @@
 import math
 import random
 import time
+import traceback
 from collections import defaultdict
 from functools import wraps
 from threading import Thread, Lock
@@ -80,17 +81,16 @@ class Agent:
         self._update_coord(coord)
 
     def _update_coord(self, coord):
-        with lock:
-            if coord != self.coord:
-                try:
-                    _sectors_cache[self.sector].remove(self.mac)
-                except KeyError:
-                    pass
+        if coord != self.coord:
+            try:
+                _sectors_cache[self.sector].remove(self.mac)
+            except KeyError:
+                pass
 
-                self.coord = coord
-                _sectors_cache[self.sector].add(self.mac)
-                self.history.append(coord)
-                self.history = self.history[-self.MAX_HISTORY:]
+            self.coord = coord
+            _sectors_cache[self.sector].add(self.mac)
+            self.history.append(coord)
+            self.history = self.history[-self.MAX_HISTORY:]
 
 
 def notification_valid(notification):
@@ -175,7 +175,10 @@ def recolor():
 
 def recolor_thread():
     while True:
-        recolor()
+        try:
+            recolor()
+        except:
+            traceback.print_exc()
         time.sleep(RECOLOR_TIMEOUT)
 
 
