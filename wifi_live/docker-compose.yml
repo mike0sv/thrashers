@@ -7,3 +7,24 @@ services:
     ports:
       - 15672:15672
       - 5672:5672
+
+  listener:
+    container_name: wifi_listener
+    image: wifi_live
+    build: src
+    environment:
+      RMQ_HOST: queue
+    command: python listener.py
+    depends_on:
+      - queue
+
+  server:
+    container_name: wifi_server
+    image: wifi_live
+    ports:
+      - 5000:5000
+    environment:
+      RMQ_HOST: queue
+    command: python server.py
+    depends_on:
+      - queue

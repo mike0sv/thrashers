@@ -1,3 +1,5 @@
 pika
 requests
 matplotlib
+pyjackson
+flask

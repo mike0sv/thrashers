@@ -20,7 +20,7 @@ blue_points, = plt.plot([], [], 'bo', alpha=.7)
 BACKGROUND = plt.imread('vare_2.jpg')
 FLOOR = 'Otaniemi>Väre>1'
 DIST_TH = 30
-CONFIDENCE_TH = 100
+CONFIDENCE_TH = 50
 SCALE = 12
 HAVE_PATIENT_ZERO = False
 
@@ -127,6 +127,7 @@ class State:
     def start_update(self):
         def handler(obj):
             if obj['floor'] != FLOOR or obj['confidence'] > CONFIDENCE_TH:
+                print('skipped')
                 return
             print(obj['id'], 'total', len(self.current_location))
             self.update_object(obj)
