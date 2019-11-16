@@ -1,13 +1,16 @@
-var canvas = null;
-var ctx = null;
 const IMG_SCALE = 0.46;
 const REFRESH_PERIOD = 10;
 const PHASE_TIME = 1000;
+const POINTS_SIZE = 7;
+const limit_x = 800;
+const limit_y = 600;
+const FADE_PHASE_SHARE = 0.2;
+
+var canvas = null;
+var ctx = null;
 var phase = 0;
-var POINTS_SIZE = 7;
-var limit_x = 800;
-var limit_y = 600;
-var FADE_PHASE_SHARE = 0.2;
+
+const ACTORS_URI = 'http://35.231.19.141:5000/actors';
 
 var points = [
     {
@@ -49,6 +52,14 @@ function reload() {
 }
 
 function nextPhase() {
+    $.getJSON({
+        url: ACTORS_URI,
+        crossDomain: true,
+        dataType: "jsonp",
+        success: function (response) {
+            console.log('kek');
+        }
+    });
     var newPoints = [];
     points.forEach(point => {
         newPoints.push({
@@ -82,7 +93,7 @@ function drawPoint(point) {
     } else {
         x = point.current.x;
         y = point.current.y;
-        fade_phase = phase > FADE_PHASE_SHARE ? 1 : phase * (1 - FADE_PHASE_SHARE);
+        const fade_phase = phase > FADE_PHASE_SHARE ? 1 : phase * (1 - FADE_PHASE_SHARE);
         size = fade_phase * POINTS_SIZE + Math.sin(fade_phase * Math.PI) * 8 * POINTS_SIZE;
     }
 
