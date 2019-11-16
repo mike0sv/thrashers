@@ -3,3 +3,5 @@ requests
 matplotlib
 pyjackson
 flask
+Flask-Caching
+flask-cors
