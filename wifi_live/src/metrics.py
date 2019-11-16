@@ -49,7 +49,7 @@ class Reporter:
 
     def report_event(self, agent: 'Agent', new=False):
         points = [
-            self._row('events', {'mac': agent.mac, 'new': new}, {}, agent.last_updated)
+            self._row('events', {'mac': agent.mac, 'new': str(new)}, {}, agent.last_updated)
         ]
         self.client.write_points(points, time_precision='s')
 
