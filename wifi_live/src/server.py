@@ -2,6 +2,7 @@ import math
 import random
 import time
 from collections import defaultdict
+from functools import wraps
 from threading import Thread, Lock
 from typing import List, Tuple, Dict
 
@@ -135,19 +136,32 @@ def objs_dist(coord1, coord2):
     return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
 
+def timeit(f):
+    @wraps(f)
+    def inner(*args, **kwargs):
+        start = time.time()
+        r = f(*args, **kwargs)
+        print(f.__name__, 'in', f'{time.time() - start:2f}')
+        return r
+
+    return inner
+
+
+@timeit
 def recolor():
     to_infect = []
-    for mac, agent in _agent_cache.items():
-        if agent.role == Role.PASSIVE:
-            continue
-        elif agent.role == Role.INFECTED:
-            for sec in _near_sectors(agent):
-                for mac2 in _sectors_cache[sec]:
-                    agent2 = _agent_cache[mac2]
-                    if mac == mac2 or agent2.role == Role.INFECTED:
-                        continue
-                    if objs_dist(agent.coord, agent2.coord) < DIST_TH:
-                        to_infect.append(mac2)
+    with lock:
+        for mac, agent in _agent_cache.items():
+            if agent.role == Role.PASSIVE:
+                continue
+            elif agent.role == Role.INFECTED:
+                for sec in _near_sectors(agent):
+                    for mac2 in _sectors_cache[sec]:
+                        agent2 = _agent_cache[mac2]
+                        if mac == mac2 or agent2.role == Role.INFECTED:
+                            continue
+                        if objs_dist(agent.coord, agent2.coord) < DIST_TH:
+                            to_infect.append(mac2)
 
     for mac in to_infect:
         _agent_cache[mac].role = Role.INFECTED
