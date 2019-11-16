@@ -15,6 +15,7 @@ const X = 0;
 const Y = 1;
 const Z = 2;
 const COORD_SCALE = 1.63;
+const TTL = 60 * 30;
 
 const textColor = '#F18021';
 const purple = '#770578';
@@ -35,6 +36,12 @@ var infectedCount = 0;
 var floor = 20;
 var targetFloor = null;
 var floorScrollDirection = 0;
+var stats = {
+    0: {healthy: 0, infected: 0},
+    20: {healthy: 0, infected: 0},
+    40: {healthy: 0, infected: 0},
+    60: {healthy: 0, infected: 0}
+};
 
 const FLOOR_MIN = 0;
 const FLOOR_MAX = 60;
@@ -69,6 +76,7 @@ function start() {
 window.onload = start;
 
 function reload() {
+    calcStats();
     draw();
     if (targetFloor !== null) {
         if (layerShiftPhase > 0.5) {
@@ -91,6 +99,26 @@ function reload() {
     }
 }
 
+function calcStats() {
+    const newStats = {
+        0: {healthy: 0, infected: 0},
+        20: {healthy: 0, infected: 0},
+        40: {healthy: 0, infected: 0},
+        60: {healthy: 0, infected: 0}
+    };
+
+    for (let mac in points) {
+        if (!points.hasOwnProperty(mac)) continue;
+        const point = points[mac];
+        if (point.role === 'passive') {
+            newStats[point.coord[Z]].healthy++;
+        } else {
+            newStats[point.coord[Z]].infected++;
+        }
+    }
+    stats = newStats;
+}
+
 function loadNewPoints() {
     $.getJSON({
         url: ACTORS_URI,
@@ -100,7 +128,8 @@ function loadNewPoints() {
 }
 
 function nextPhase(apiPoints) {
-    var infectedCountNew = 0;
+    const now = new Date().getTime() / 1000;
+
     for (let mac in points) {
         if (!points.hasOwnProperty(mac)) continue;
         points[mac].state = 'standing'
@@ -119,31 +148,42 @@ function nextPhase(apiPoints) {
             const oldPoint = points[mac];
             oldPoint['prev'] = oldPoint['coord'];
             oldPoint['coord'] = newPoint['coord'];
+            if (oldPoint['role'] !== newPoint['role']) {
+                console.log('CAPTURED');
+                oldPoint.state = 'captured';
+            } else {
+                oldPoint.state = 'moving';
+            }
             oldPoint['role'] = newPoint['role'];
-            newPoint.state = 'moving';
-            // todo update color
+            oldPoint['last_updated'] = newPoint['last_updated'];
         } else {
             newPoint.state = 'new';
             newPoint.fadeInDelay = Math.random() * Math.min(1 - FADE_PHASE_SHARE, FADE_SHIFT_MAX);
             points[mac] = newPoint;
         }
+    }
 
-        if (newPoint.role === 'infected') {
-            infectedCountNew++;
+    const macsToDelete = [];
+    for (let mac in points) {
+        if (!points.hasOwnProperty(mac)) continue;
+        if (!apiPoints.hasOwnProperty(mac)) {
+            macsToDelete.push(mac);
         }
     }
-    infectedCount = infectedCountNew;
+    for (var mac in macsToDelete) {
+        delete points[mac];
+    }
     loading = false;
     phase = 0;
 }
 
 function gotToFloor(floorRequest) {
     console.log('targetFloor', floorRequest);
-    if(floorRequest === floor) {
+    if (floorRequest === floor) {
         return;
     }
     targetFloor = floorRequest;
-    floorScrollDirection = - (floor - targetFloor) / Math.abs(floor - targetFloor);
+    floorScrollDirection = -(floor - targetFloor) / Math.abs(floor - targetFloor);
     console.log('floorScrollDirection', floorScrollDirection);
 }
 
@@ -157,7 +197,6 @@ function draw() {
         if (!points.hasOwnProperty(mac)) continue;
         drawPoint(points[mac]);
     }
-    healthyCount = Object.keys(points).length;
     addTextInfo();
     drawLayers();
 }
@@ -165,8 +204,12 @@ function draw() {
 function addTextInfo() {
     ctx.fillStyle = textColor;
     ctx.font = "Lato,sans-serif";
-    ctx.fillText("Healthy people: " + healthyCount, 850, 50);
-    ctx.fillText("People infected: " + infectedCount, 850, 70);
+    ctx.fillText("Healthy people: " + stats[floor].healthy, 850, 50);
+    ctx.fillStyle = purple;
+    ctx.fillRect(835, 43, 7, 7);
+    ctx.fillStyle = textColor;
+    ctx.fillText("People infected: " + stats[floor].infected, 850, 70);
+    ctx.fillRect(835, 63, 7, 7);
 }
 
 function infect() {
@@ -190,7 +233,17 @@ function drawPoint(point) {
         const shift = Math.sin(phase * Math.PI / 2);
         x = point.prev[X] + shift * (point.coord[X] - point.prev[X]);
         y = point.prev[Y] + shift * (point.coord[Y] - point.prev[Y]);
-        size = POINTS_SIZE;
+
+        if (point.state === 'captured') {
+            if (phase > FADE_PHASE_SHARE) {
+                fade_phase = 1;
+            } else {
+                fade_phase = phase * (1 - FADE_PHASE_SHARE);
+            }
+            size = fade_phase * POINTS_SIZE + Math.sin(fade_phase * Math.PI) * 8 * POINTS_SIZE;
+        } else {
+            size = POINTS_SIZE;
+        }
     } else {
         x = point.coord[X];
         y = point.coord[Y];
@@ -219,13 +272,22 @@ function drawLayers() {
     var x = LAYER_CONF.x;
     var y = LAYER_CONF.y;
     for (let i = 4; i > 0; i--) {
-        drawLayer(x, y, i, (i + 6) / 11);
+        drawLayer(x, y, i);
         y += LAYER_CONF.shift;
     }
 }
 
-function drawLayer(x, y, index, share) {
+function getHealthyShare(floor) {
+    const floorStats = stats[floor];
+    if (floorStats.infected === 0) {
+        return 0;
+    }
+    return floorStats.infected / (floorStats.infected + floorStats.healthy);
+}
+
+function drawLayer(x, y, index) {
     const layerElevation = (index - 1) * FLOOR_STEP;
+    const share = getHealthyShare(layerElevation);
 
     ctx.moveTo(x + LAYER_CONF.widthEdge, y);
     ctx.beginPath();
@@ -264,7 +326,11 @@ function drawLayer(x, y, index, share) {
         ctx.fill();
     }
 
-    ctx.fillStyle = "#000";
+    if (share > 0.5) {
+        ctx.fillStyle = "#000";
+    } else {
+        ctx.fillStyle = textColor;
+    }
     ctx.font = "Lato,sans-serif";
     ctx.fillText(index, x + LAYER_CONF.widthEdge + LAYER_CONF.widthCenter / 2 - 2, y + LAYER_CONF.height * 0.8);
 
