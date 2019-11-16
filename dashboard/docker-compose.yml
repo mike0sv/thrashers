@@ -1,0 +1,10 @@
+version: "3.7"
+
+services:
+  dashboard:
+    container_name: wifi_dashboard
+    image: nginx
+    volumes:
+    - .:/usr/share/nginx/html:ro
+    ports:
+    - 80:80
