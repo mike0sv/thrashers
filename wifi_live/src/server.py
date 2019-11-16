@@ -1,10 +1,11 @@
 import math
+import random
 import time
 from collections import defaultdict
 from threading import Thread, Lock
 from typing import List, Tuple, Dict
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_caching import Cache
 from flask_cors import CORS
 from pyjackson import serialize
@@ -85,7 +86,6 @@ def notification_valid(notification):
 
 
 def update_handler(notification):
-    print(len(_agent_cache))
     if not notification_valid(notification):
         return
     mac = notification['mac']
@@ -136,7 +136,7 @@ def objs_dist(coord1, coord2):
 
 
 def recolor():
-    to_infest = []
+    to_infect = []
     for mac, agent in _agent_cache.items():
         if agent.role == Role.PASSIVE:
             continue
@@ -147,9 +147,9 @@ def recolor():
                     if mac == mac2 or agent2.role == Role.INFECTED:
                         continue
                     if objs_dist(agent.coord, agent2.coord) < DIST_TH:
-                        to_infest.append(mac2)
+                        to_infect.append(mac2)
 
-    for mac in to_infest:
+    for mac in to_infect:
         _agent_cache[mac].role = Role.INFECTED
         print(mac, 'INFECTED!!!!')
 
@@ -173,8 +173,41 @@ def get_actors():
         return jsonify(serialize(_agent_cache, Dict[str, Agent]))
 
 
+@app.route('/infect')
+def infect():
+    mac = request.args.get('mac', None)
+    if mac is None:
+        with lock:
+            mac = random.choice(list(_agent_cache.keys()))
+
+    _agent_cache[mac].role = Role.INFECTED
+    return 'ok'
+
+
+@app.route('/heal_all')
+def heal_all():
+    with lock:
+        for agent in _agent_cache.values():
+            agent.role = Role.PASSIVE
+
+    return 'ok'
+
+
+@app.route('/distance')
+def get_distance():
+    return str(DIST_TH)
+
+
+@app.route('/distance', methods=['POST'])
+def set_distance():
+    global DIST_TH
+    DIST_TH = float(request.form.get('distance', DIST_TH))
+    return 'ok'
+
+
 def main():
     start_thread(update_thread)
+    start_thread(recolor_thread)
     app.run('0.0.0.0')
 
 
