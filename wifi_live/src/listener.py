@@ -29,7 +29,7 @@ def transform(obj):
     return {
         'id': n['eventId'],
         'mac': n['deviceId'],
-        'timestamp': n['timestamp'],
+        'timestamp': n['timestamp'] // 1000,
         'confidence': n['confidenceFactor'],
         'floor': n['locationMapHierarchy'],
         'x': x,
