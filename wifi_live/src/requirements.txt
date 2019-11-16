@@ -5,3 +5,4 @@ pyjackson
 flask
 Flask-Caching
 flask-cors
+influxdb
