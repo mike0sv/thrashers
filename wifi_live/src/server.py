@@ -15,6 +15,7 @@ from flask_cors import CORS
 from pyjackson import serialize
 
 from listener import PikaCon
+from metrics import Reporter
 
 _agent_cache: Dict[str, 'Agent'] = {}
 _sectors_cache = defaultdict(set)
@@ -28,7 +29,13 @@ DIST_TH = 10
 HAVE_PATIENT_ZERO = False
 MAX_UPDATE_DISTANCE = 100
 MAX_UPDATE_TIMEOUT = 300
+CLEAR_TIMEOUT = 30 * 60
 RECOLOR_TIMEOUT = .5
+REPORT_DATA = True
+if REPORT_DATA:
+    reporter = Reporter()
+else:
+    reporter = None
 
 app = Flask(__name__)
 cache = Cache(config={'CACHE_TYPE': 'simple'})
@@ -122,6 +129,28 @@ def update_thread():
     con.consume(update_handler)
 
 
+def clear_timed_out():
+    with lock:
+        to_remove = []
+        for agent in _agent_cache.values():
+            if time.time() - agent.last_updated > CLEAR_TIMEOUT:
+                to_remove.append(agent.mac)
+
+        for mac in to_remove:
+            agent = _agent_cache[mac]
+            _sectors_cache[agent.sector].remove(mac)
+            del _agent_cache[mac]
+
+
+def clear_thread():
+    while True:
+        try:
+            clear_timed_out()
+        except:
+            traceback.print_exc()
+        time.sleep(CLEAR_TIMEOUT / 2)
+
+
 def start_thread(target):
     t = Thread(target=target, name=target.__name__, daemon=True)
     t.start()
@@ -166,6 +195,8 @@ def timeit(f):
 def recolor():
     to_infect = []
     with lock:
+        if REPORT_DATA:
+            reporter.report(_agent_cache.values())
         for mac, agent in _agent_cache.items():
             if agent.role == Role.PASSIVE:
                 continue
@@ -242,6 +273,7 @@ def get_threads():
 def main():
     start_thread(update_thread)
     start_thread(recolor_thread)
+    start_thread(clear_thread)
     app.run('0.0.0.0')
 
 
