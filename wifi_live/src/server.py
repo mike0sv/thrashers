@@ -7,7 +7,7 @@ import traceback
 from collections import defaultdict
 from functools import wraps
 from threading import Thread, Lock
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 
 from flask import Flask, jsonify, request
 from flask_caching import Cache
@@ -62,7 +62,7 @@ class Agent:
         'Otaniemi>Väre>3': 60,
     }
 
-    def __init__(self, mac: str, coord: Tuple[float, float, int], role: str,
+    def __init__(self, mac: str, coord: Optional[Tuple[float, float, int]], role: str,
                  last_updated: int):
         self.last_updated = last_updated
         self.mac = mac
@@ -105,7 +105,7 @@ class Agent:
     def create(cls, notification):
         global HAVE_PATIENT_ZERO
         mac = notification['mac']
-        agent = Agent(mac, None, Role.DEFAULT, None)
+        agent = Agent(mac, None, Role.DEFAULT, notification['timestamp'])
         agent.update(notification)
         if not HAVE_PATIENT_ZERO:
             HAVE_PATIENT_ZERO = True
