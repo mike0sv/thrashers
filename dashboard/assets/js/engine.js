@@ -1,9 +1,13 @@
 const IMG_SCALE = 0.46;
 const IMG_SHIFT_X = 0;
 const IMG_SHIFT_Y = 0;
+const CANVAS_HEIGHT = 700;
+
+var layerShift = 0;
 
 const REFRESH_PERIOD = 10;
 const PHASE_TIME = 1000;
+const LAYER_PHASE_TIME = 500;
 const POINTS_SIZE = 4;
 const FADE_PHASE_SHARE = 0.1;
 const FADE_SHIFT_MAX = 0.3;
@@ -13,6 +17,7 @@ const Z = 2;
 const COORD_SCALE = 1.63;
 
 const textColor = '#F18021';
+const purple = '#770578';
 const colors = {
     infected: '#F18021',
     passive: '#770578',
@@ -22,18 +27,28 @@ const colors = {
 var canvas = null;
 var ctx = null;
 var phase = 0;
+var layerShiftPhase = 0;
 var loading = false;
-var individualsCount = 0;
+var healthyCount = 0;
 var infectedCount = 0;
+
 var floor = 20;
+var targetFloor = null;
+var floorScrollDirection = 0;
+
+const FLOOR_MIN = 0;
+const FLOOR_MAX = 60;
+const FLOOR_STEP = 20;
 
 const LAYER_CONF = {
     x: 850,
-    y: 300,
-    shift: 50,
+    y: 100,
+    shift: 20,
     widthEdge: 20,
     widthCenter: 30,
-    height: 12
+    height: 10,
+    arrowStart: -20,
+    arrowEnd: -10
 };
 
 var background1 = null;
@@ -55,7 +70,20 @@ window.onload = start;
 
 function reload() {
     draw();
-    if (phase <= 1) {
+    if (targetFloor !== null) {
+        if (layerShiftPhase > 0.5) {
+            floor = targetFloor;
+        }
+        if (layerShiftPhase <= 1) {
+            layerShiftPhase += REFRESH_PERIOD / LAYER_PHASE_TIME;
+            layerShift = floorScrollDirection * Math.sin(layerShiftPhase * Math.PI) * CANVAS_HEIGHT * (layerShiftPhase > 0.5 ? -1 : 1);
+        } else {
+            layerShiftPhase = 0;
+            targetFloor = null;
+            layerShiftPhase = 0;
+        }
+    }
+    if (phase <= 1 && !loading) {
         phase += REFRESH_PERIOD / PHASE_TIME;
     } else if (!loading) {
         loading = true;
@@ -87,8 +115,6 @@ function nextPhase(apiPoints) {
 
         const newPoint = apiPoints[mac];
 
-        if (newPoint.coord[Z] !== floor) continue;
-
         if (points.hasOwnProperty(mac)) {
             const oldPoint = points[mac];
             oldPoint['prev'] = oldPoint['coord'];
@@ -111,21 +137,27 @@ function nextPhase(apiPoints) {
     phase = 0;
 }
 
-function gotToFloor() {
-
+function gotToFloor(floorRequest) {
+    console.log('targetFloor', floorRequest);
+    if(floorRequest === floor) {
+        return;
+    }
+    targetFloor = floorRequest;
+    floorScrollDirection = - (floor - targetFloor) / Math.abs(floor - targetFloor);
+    console.log('floorScrollDirection', floorScrollDirection);
 }
 
 function draw() {
     // console.log('draw');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(background1, IMG_SHIFT_X, IMG_SHIFT_Y, background1.width * IMG_SCALE, background1.height * IMG_SCALE);
+    ctx.drawImage(background1, IMG_SHIFT_X, IMG_SHIFT_Y + layerShift, background1.width * IMG_SCALE, background1.height * IMG_SCALE);
 
     // console.log('drawing points', Object.keys(points).length , phase);
     for (let mac in points) {
         if (!points.hasOwnProperty(mac)) continue;
         drawPoint(points[mac]);
     }
-    individualsCount = Object.keys(points).length;
+    healthyCount = Object.keys(points).length;
     addTextInfo();
     drawLayers();
 }
@@ -133,7 +165,7 @@ function draw() {
 function addTextInfo() {
     ctx.fillStyle = textColor;
     ctx.font = "Lato,sans-serif";
-    ctx.fillText("Healthy people: " + individualsCount, 850, 50);
+    ctx.fillText("Healthy people: " + healthyCount, 850, 50);
     ctx.fillText("People infected: " + infectedCount, 850, 70);
 }
 
@@ -151,6 +183,7 @@ function heal() {
 
 
 function drawPoint(point) {
+    if (point.coord[Z] !== floor) return;
 
     var x, y, size;
     if (point.hasOwnProperty('prev')) {
@@ -178,31 +211,22 @@ function drawPoint(point) {
     }
 
     ctx.fillStyle = colors[point['role']];
-    ctx.fillRect(x * COORD_SCALE - size / 2, y * COORD_SCALE - size / 2, size, size);
+    ctx.fillRect(x * COORD_SCALE - size / 2, y * COORD_SCALE - size / 2 + layerShift, size, size);
 }
-
-/*
-nfectedCount = 0;
-
-const LAYER_CONF = {
-    x: 850,
-    y: 300,
-    shift: 50,
-    widthEdge: 30,
-    widthCenter: 60,
-    height: 30
-};
- */
 
 function drawLayers() {
     // const fullLength = LAYER_CONF.widthCenter + LAYER_CONF.widthEdge * 2;
     var x = LAYER_CONF.x;
     var y = LAYER_CONF.y;
-    drawLayer(x, y);
+    for (let i = 4; i > 0; i--) {
+        drawLayer(x, y, i, (i + 6) / 11);
+        y += LAYER_CONF.shift;
+    }
 }
 
-function drawLayer(x,y) {
-    // console.log('kek');
+function drawLayer(x, y, index, share) {
+    const layerElevation = (index - 1) * FLOOR_STEP;
+
     ctx.moveTo(x + LAYER_CONF.widthEdge, y);
     ctx.beginPath();
     ctx.lineTo(x + LAYER_CONF.widthEdge, y);
@@ -210,8 +234,50 @@ function drawLayer(x,y) {
     ctx.lineTo(x + LAYER_CONF.widthEdge + LAYER_CONF.widthCenter, y + LAYER_CONF.height);
     ctx.lineTo(x, y + LAYER_CONF.height);
     ctx.closePath();
-    ctx.fillStyle = textColor;
-    ctx.fill();
+    // ctx.fillStyle = textColor;
+    // ctx.fill();
+    ctx.strokeStyle = textColor;
+    ctx.stroke();
+
+    // console.log('share', share);
+    if (share > 0) {
+        const len = LAYER_CONF.widthEdge * 2 + LAYER_CONF.widthCenter;
+        const rightBorder = len * share;
+
+        ctx.moveTo(x, y + LAYER_CONF.height);
+        ctx.beginPath();
+        const x1 = Math.min(x + LAYER_CONF.widthEdge, x + rightBorder);
+        const y1 = rightBorder > LAYER_CONF.widthEdge ? y : y + LAYER_CONF.height * (1 - rightBorder / LAYER_CONF.widthEdge);
+        ctx.lineTo(x1, y1);
+
+        if (rightBorder > LAYER_CONF.widthEdge) {
+            ctx.lineTo(x + rightBorder, y);
+        }
+        if (rightBorder > LAYER_CONF.widthEdge + LAYER_CONF.widthCenter) {
+            ctx.lineTo(x + rightBorder, y + LAYER_CONF.height * (1 - (rightBorder - LAYER_CONF.widthEdge - LAYER_CONF.widthCenter) / LAYER_CONF.widthEdge))
+            ctx.lineTo(x + LAYER_CONF.widthEdge + LAYER_CONF.widthCenter, y + LAYER_CONF.height);
+        }
+        ctx.lineTo(x + rightBorder, y + LAYER_CONF.height);
+        ctx.lineTo(x, y + LAYER_CONF.height);
+        ctx.closePath();
+        ctx.fillStyle = textColor;
+        ctx.fill();
+    }
+
+    ctx.fillStyle = "#000";
+    ctx.font = "Lato,sans-serif";
+    ctx.fillText(index, x + LAYER_CONF.widthEdge + LAYER_CONF.widthCenter / 2 - 2, y + LAYER_CONF.height * 0.8);
+
+    if (layerElevation === floor) {
+        ctx.moveTo(x + LAYER_CONF.arrowStart, y);
+        ctx.beginPath();
+        ctx.lineTo(x + LAYER_CONF.arrowEnd, y + LAYER_CONF.height / 2);
+        ctx.lineTo(x + LAYER_CONF.arrowStart, y + LAYER_CONF.height);
+        ctx.lineTo(x + LAYER_CONF.arrowStart, y);
+        ctx.closePath();
+        ctx.strokeStyle = textColor;
+        ctx.stroke();
+    }
 }
 
 function loadBackground() {
@@ -229,6 +295,9 @@ function loadBackground() {
 
 function setupCanvas() {
     canvas = document.getElementById('floor1');
+    canvas.addEventListener("mouseup", function (e) {
+        getMousePosition(canvas, e);
+    });
     ctx = canvas.getContext('2d');
     var dpr = window.devicePixelRatio || 1;
     var rect = canvas.getBoundingClientRect();
@@ -239,3 +308,26 @@ function setupCanvas() {
     return ctx;
 }
 
+function getMousePosition(canvas, event) {
+    let rect = canvas.getBoundingClientRect();
+    let x = event.clientX - rect.left;
+    let y = event.clientY - rect.top;
+    handleMouse(x, y);
+}
+
+function handleMouse(xM, yM) {
+    const x = LAYER_CONF.x;
+    var y = LAYER_CONF.y;
+    for (let i = FLOOR_MAX; i >= FLOOR_MIN; i -= FLOOR_STEP) {
+        if (checkLayerClick(x, y, xM, yM)) {
+            gotToFloor(i);
+            return;
+        }
+        y += LAYER_CONF.shift;
+    }
+}
+
+function checkLayerClick(x, y, xM, yM) {
+    return xM > x && xM < x + LAYER_CONF.widthCenter + LAYER_CONF.widthEdge * 2
+        && yM > y && yM < y + LAYER_CONF.height;
+}
