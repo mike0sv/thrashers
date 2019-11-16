@@ -80,16 +80,17 @@ class Agent:
         self._update_coord(coord)
 
     def _update_coord(self, coord):
-        if coord != self.coord:
-            try:
-                _sectors_cache[self.sector].remove(self.mac)
-            except KeyError:
-                pass
+        with lock:
+            if coord != self.coord:
+                try:
+                    _sectors_cache[self.sector].remove(self.mac)
+                except KeyError:
+                    pass
 
-            self.coord = coord
-            _sectors_cache[self.sector].add(self.mac)
-            self.history.append(coord)
-            self.history = self.history[-self.MAX_HISTORY:]
+                self.coord = coord
+                _sectors_cache[self.sector].add(self.mac)
+                self.history.append(coord)
+                self.history = self.history[-self.MAX_HISTORY:]
 
 
 def notification_valid(notification):
