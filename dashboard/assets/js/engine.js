@@ -15,7 +15,6 @@ const X = 0;
 const Y = 1;
 const Z = 2;
 const COORD_SCALE = 1.63;
-const TTL = 60 * 30;
 
 const textColor = '#F18021';
 const purple = '#770578';
@@ -30,8 +29,6 @@ var ctx = null;
 var phase = 0;
 var layerShiftPhase = 0;
 var loading = false;
-var healthyCount = 0;
-var infectedCount = 0;
 
 var floor = 20;
 var targetFloor = null;
@@ -120,28 +117,25 @@ function calcStats() {
 }
 
 function loadNewPoints() {
-    $.getJSON({
-        url: ACTORS_URI,
-        success: nextPhase
-        // todo handle errors here
-    });
+    try {
+        $.getJSON({
+            url: ACTORS_URI,
+            success: nextPhase
+        });
+    } catch (e) {
+        console.error('failed to access api', e);
+    }
 }
 
 function nextPhase(apiPoints) {
-    const now = new Date().getTime() / 1000;
-
     for (let mac in points) {
         if (!points.hasOwnProperty(mac)) continue;
-        points[mac].state = 'standing'
+        points[mac].state = 'standing';
         delete points[mac].prev;
     }
 
     for (let mac in apiPoints) {
         if (!apiPoints.hasOwnProperty(mac)) continue;
-        // if (!mac.endsWith('0')) continue;
-
-        // console.log('mac', mac);
-
         const newPoint = apiPoints[mac];
 
         if (points.hasOwnProperty(mac)) {
@@ -167,10 +161,12 @@ function nextPhase(apiPoints) {
     for (let mac in points) {
         if (!points.hasOwnProperty(mac)) continue;
         if (!apiPoints.hasOwnProperty(mac)) {
+            console.log('FOUND MAC TO DELETE', mac);
             macsToDelete.push(mac);
         }
     }
     for (var mac in macsToDelete) {
+        console.log('DELETING MAC', mac);
         delete points[mac];
     }
     loading = false;
@@ -213,7 +209,12 @@ function addTextInfo() {
 }
 
 function infect() {
-    $.get(INFECT_URI + '?floor=' + floor);
+    $.get(INFECT_URI + '?floor=' + floor, infected);
+}
+
+function infected(data) {
+    console.log('data', data);
+    points[data].role = 'infected';
 }
 
 function heal() {
