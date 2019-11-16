@@ -14,7 +14,7 @@ services:
     build: src
     environment:
       RMQ_HOST: queue
-    command: python listener.py
+    command: python -u listener.py
     depends_on:
       - queue
 
@@ -25,6 +25,6 @@ services:
       - 5000:5000
     environment:
       RMQ_HOST: queue
-    command: python server.py
+    command: python -u server.py
     depends_on:
       - queue
