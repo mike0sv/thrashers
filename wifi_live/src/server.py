@@ -1,5 +1,7 @@
 import math
 import random
+import sys
+import threading
 import time
 import traceback
 from collections import defaultdict
@@ -18,6 +20,7 @@ _agent_cache: Dict[str, 'Agent'] = {}
 _sectors_cache = defaultdict(set)
 HAVE_PATIENT_ZERO = False
 lock = Lock()
+_treads: List[Thread] = []
 
 SECTOR_SIZE = 30
 SECTORS_ROW_LENGTH = 100
@@ -114,8 +117,9 @@ def update_thread():
 
 
 def start_thread(target):
-    t = Thread(target=target, daemon=True)
+    t = Thread(target=target, name=target.__name__, daemon=True)
     t.start()
+    _treads.append(t)
 
 
 #  ------------------------------------------
@@ -219,6 +223,13 @@ def set_distance():
     global DIST_TH
     DIST_TH = float(request.form.get('distance', DIST_TH))
     return 'ok'
+
+
+@app.route('/threads')
+def get_threads():
+    return jsonify(
+        {t.name: str(t) for t in threading.enumerate()}
+    )
 
 
 def main():
