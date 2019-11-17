@@ -1,7 +1,6 @@
 import os
 import time
 import traceback
-from pprint import pprint
 from queue import Queue, Empty
 from typing import Iterable
 
@@ -32,18 +31,16 @@ class Reporter:
     def push_thread(self):
         while True:
             points = []
-            for _ in range(1000):
+            for _ in range(100):
                 try:
                     points.extend(self.queue.get(timeout=0))
                 except Empty:
                     break
             if len(points) > 0:
-                print(len(points))
                 try:
                     self.client.write_points(points, time_precision='s')
                 except InfluxDBClientError as e:
-                    print(e)
-                    pprint(points)
+                    traceback.print_exc()
 
             else:
                 time.sleep(1)
