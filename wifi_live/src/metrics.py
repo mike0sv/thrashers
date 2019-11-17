@@ -1,5 +1,6 @@
 import os
 import time
+from queue import Queue
 from typing import Iterable
 
 from influxdb import InfluxDBClient
@@ -20,6 +21,7 @@ class Reporter:
         self.client = InfluxDBClient(DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_DBNAME, ssl=True)
         self.measurement = None
         self.renew_measurement()
+        self.queue = Queue()
 
     def renew_measurement(self):
         self.measurement = f'run_{int(time.time())}'
@@ -45,19 +47,22 @@ class Reporter:
                 'infected_share': infected / (infected + not_infected)
             })
         ]
-        self.client.write_points(points, time_precision='s')
+        self.queue.put(points)
+        # self.client.write_points(points, time_precision='s')
 
-    def report_event(self, agent: 'Agent', new=False):
+    def report_event(self, mac, timestamp, new=False):
         points = [
-            self._row('events', {'mac': agent.mac, 'new': str(new)}, {'new': new}, agent.last_updated)
+            self._row('events', {'mac': mac, 'new': str(new)}, {'new': new}, timestamp)
         ]
-        self.client.write_points(points, time_precision='s')
+        self.queue.put(points)
+        # self.client.write_points(points, time_precision='s')
 
     def report_infection(self, agent: 'Agent'):
         points = [
             self._row('infections', {'mac': agent.mac}, {'survived': agent.survived_for})
         ]
-        self.client.write_points(points, time_precision='s')
+        self.queue.put(points)
+        # self.client.write_points(points, time_precision='s')
 
 
 from server import Agent, Role
