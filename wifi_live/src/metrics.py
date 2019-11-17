@@ -1,6 +1,7 @@
 import os
 import time
 import traceback
+from pprint import pprint
 from queue import Queue, Empty
 from typing import Iterable
 
@@ -31,7 +32,7 @@ class Reporter:
     def push_thread(self):
         while True:
             points = []
-            for _ in range(10):
+            for _ in range(1000):
                 try:
                     points.extend(self.queue.get(timeout=0))
                 except Empty:
@@ -40,8 +41,9 @@ class Reporter:
                 print(len(points))
                 try:
                     self.client.write_points(points, time_precision='s')
-                except InfluxDBClientError:
-                    traceback.print_exc()
+                except InfluxDBClientError as e:
+                    print(e)
+                    pprint(points)
 
             else:
                 time.sleep(1)
@@ -70,9 +72,9 @@ class Reporter:
         self.queue.put(points)
         # self.client.write_points(points, time_precision='s')
 
-    def report_event(self, mac, timestamp, new=False):
+    def report_event(self, agent: 'Agent', new=False):
         points = [
-            self._row('events', {'mac': mac, 'new': str(new)}, {'new': new}, timestamp)
+            self._row('events', {'mac': agent.mac, 'new': str(new)}, {'new': new}, agent.survived_for)
         ]
         self.queue.put(points)
         # self.client.write_points(points, time_precision='s')
