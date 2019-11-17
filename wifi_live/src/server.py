@@ -309,6 +309,8 @@ def main():
     start_thread(update_thread)
     start_thread(recolor_thread)
     start_thread(clear_thread)
+    if REPORT_DATA:
+        start_thread(reporter.push_thread)
     app.run('0.0.0.0')
 
 

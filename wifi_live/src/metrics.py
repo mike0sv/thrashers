@@ -1,6 +1,6 @@
 import os
 import time
-from queue import Queue
+from queue import Queue, Empty
 from typing import Iterable
 
 from influxdb import InfluxDBClient
@@ -25,6 +25,20 @@ class Reporter:
 
     def renew_measurement(self):
         self.measurement = f'run_{int(time.time())}'
+
+    def push_thread(self):
+        while True:
+            points = []
+            for _ in range(10):
+                try:
+                    points.extend(self.queue.get(timeout=0))
+                except Empty:
+                    break
+            if len(points) > 0:
+                print(len(points))
+                self.client.write_points(points, time_precision='s')
+            else:
+                time.sleep(1)
 
     def _row(self, measurement, tags, fields, timestamp=None):
         timestamp = timestamp or int(time.time())
