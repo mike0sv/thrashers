@@ -151,25 +151,19 @@ function calcStats() {
     stats = newStats;
 }
 
+var updateRequest = null;
+
 function loadNewPoints() {
     try {
-        $.getJSON({
+        updateRequest = $.getJSON({
             url: ACTORS_URI,
-            success: nextPhase
+            success: nextPhase,
+            error: () => {loading = false}
         });
     } catch (e) {
         console.error('failed to access api', e);
+        loading = false;
     }
-}
-
-function checkStates() {
-    var news = 0;
-    Object.values(points).forEach(point => {
-        if (point.state === 'new') {
-            news++;
-        }
-    });
-    console.log('news', news);
 }
 
 function nextPhase(apiPoints) {
@@ -183,7 +177,9 @@ function nextPhase(apiPoints) {
     }
 
     Object.values(points).forEach(point => {
-        point.state = 'standing';
+        if (point.state !== 'infected') {
+            point.state = 'standing';
+        }
     });
 
     for (let mac in apiPoints) {
@@ -194,12 +190,16 @@ function nextPhase(apiPoints) {
             const oldPoint = points[mac];
             oldPoint['prev'] = oldPoint['coord'];
             oldPoint['coord'] = newPoint['coord'];
-            if (oldPoint['role'] !== newPoint['role']) {
-                oldPoint.state = 'captured';
+            if (oldPoint.state !== 'infected' && oldPoint.state !== 'healed') {
+                if (oldPoint['role'] !== newPoint['role']) {
+                    oldPoint.state = 'captured';
+                } else {
+                    oldPoint.state = 'moving';
+                }
+                oldPoint['role'] = newPoint['role'];
             } else {
                 oldPoint.state = 'moving';
             }
-            oldPoint['role'] = newPoint['role'];
             if (state !== 'running') {
                 oldPoint['state'] = 'new';
                 delete oldPoint['prev'];
@@ -321,34 +321,41 @@ function addTextInfo() {
     ctx.fillStyle = textColor;
     ctx.fillText("Infected people: " + stats[floor].infected, 850, 70);
     ctx.fillRect(835, 63, 7, 7);
-
-    // ctx.fillText("123 sec since infestation " , 850, 30);
-
-    // ctx.fillText("MAC: " + macHover, 850, 90);
 }
 
 function infect(mac) {
     if (!mac) {
+        updateRequest.abort();
         $.get(INFECT_URI + '?floor=' + floor, infected);
     } else {
+        updateRequest.abort();
         $.get(INFECT_URI + '?floor=' + floor + '&mac=' + mac, infected);
     }
 }
 
 function infected(data) {
     points[data].role = 'infected';
+    points[data].state = 'infected';
 }
 
 function heal() {
     for (let mac in points) {
         if (!points.hasOwnProperty(mac)) continue;
-        points[mac].state = 'passive';
+        // points[mac].role = 'passive';
+        points[mac].timeHealed = new Date().getTime() + Math.random() * 800;
+        points[mac].state = 'healed';
     }
     $.get(HEAL_URI);
+    updateRequest.abort();
 }
 
 
 function drawPoint(point) {
+    if(point.state === 'healed' && point.timeHealed < new Date().getTime()) {
+        point.role = 'passive';
+        point.state = 'moving';
+    }
+
     if (point.coord[Z] !== floor) return;
 
     var x, y, size;
