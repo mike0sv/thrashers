@@ -1,9 +1,12 @@
 import os
 import time
+import traceback
+from queue import Queue, Empty
 from typing import Iterable
 
 from influxdb import InfluxDBClient
 import urllib3
+from influxdb.exceptions import InfluxDBClientError
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -20,9 +23,27 @@ class Reporter:
         self.client = InfluxDBClient(DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_DBNAME, ssl=True)
         self.measurement = None
         self.renew_measurement()
+        self.queue = Queue()
 
     def renew_measurement(self):
         self.measurement = f'run_{int(time.time())}'
+
+    def push_thread(self):
+        while True:
+            points = []
+            for _ in range(100):
+                try:
+                    points.extend(self.queue.get(timeout=0))
+                except Empty:
+                    break
+            if len(points) > 0:
+                try:
+                    self.client.write_points(points, time_precision='s')
+                except InfluxDBClientError as e:
+                    traceback.print_exc()
+
+            else:
+                time.sleep(1)
 
     def _row(self, measurement, tags, fields, timestamp=None):
         timestamp = timestamp or int(time.time())
@@ -45,19 +66,22 @@ class Reporter:
                 'infected_share': infected / (infected + not_infected)
             })
         ]
-        self.client.write_points(points, time_precision='s')
+        self.queue.put(points)
+        # self.client.write_points(points, time_precision='s')
 
     def report_event(self, agent: 'Agent', new=False):
         points = [
-            self._row('events', {'mac': agent.mac, 'new': new}, {}, agent.last_updated)
+            self._row('events', {'mac': agent.mac, 'new': str(new)}, {'new': new}, agent.last_updated)
         ]
-        self.client.write_points(points, time_precision='s')
+        self.queue.put(points)
+        # self.client.write_points(points, time_precision='s')
 
     def report_infection(self, agent: 'Agent'):
         points = [
             self._row('infections', {'mac': agent.mac}, {'survived': agent.survived_for})
         ]
-        self.client.write_points(points, time_precision='s')
+        self.queue.put(points)
+        # self.client.write_points(points, time_precision='s')
 
 
 from server import Agent, Role

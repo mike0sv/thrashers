@@ -38,6 +38,7 @@ else:
     reporter = None
 
 INFECTION_START = time.time()
+INFECTION_STARTED = False
 
 app = Flask(__name__)
 cache = Cache(config={'CACHE_TYPE': 'simple'})
@@ -73,10 +74,15 @@ class Agent:
         self.infection_time = None
 
     def infect(self):
+        global INFECTION_STARTED, INFECTION_START
         self.infection_time = time.time()
         self._role = Role.INFECTED
         if REPORT_DATA:
             reporter.report_infection(self)
+
+        if not INFECTION_STARTED:
+            INFECTION_STARTED = True
+            INFECTION_START = time.time()
 
     def cure(self):
         self.creation_time = time.time()
@@ -273,11 +279,11 @@ def infect():
 
 @app.route('/heal_all')
 def heal_all():
-    global INFECTION_START
+    global INFECTION_STARTED
     with lock:
         for agent in _agent_cache.values():
             agent.cure()
-    INFECTION_START = time.time()
+    INFECTION_STARTED = False
     return 'ok'
 
 
@@ -302,13 +308,15 @@ def get_threads():
 
 @app.route('/start_time')
 def get_infection_start():
-    return str(int(INFECTION_START))
+    return str(int(INFECTION_START)) if INFECTION_STARTED else '0'
 
 
 def main():
     start_thread(update_thread)
     start_thread(recolor_thread)
     start_thread(clear_thread)
+    if REPORT_DATA:
+        start_thread(reporter.push_thread)
     app.run('0.0.0.0')
 
 
