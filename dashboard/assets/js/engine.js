@@ -1,6 +1,22 @@
-const IMG_SCALE = 0.46;
-const IMG_SHIFT_X = 0;
-const IMG_SHIFT_Y = 0;
+const IMG_SCALE = {
+    0: 0.43,
+    20: 0.62,
+    40: 0.64,
+    60: 0.68
+};
+
+const IMG_SHIFT_X = {
+    0: 25,
+    20: 0,
+    40: -5,
+    60: 58
+};
+const IMG_SHIFT_Y = {
+    0: -20,
+    20: 0,
+    40: -3,
+    60: 0
+};
 const CANVAS_HEIGHT = 700;
 const DISTANCE_THRESHOLD = 10;
 
@@ -34,7 +50,9 @@ var ctx = null;
 var phase = 0;
 var layerShiftPhase = 0;
 var loading = false;
-var startup = true;
+var state = 'splash';
+
+var backgroundsLoaded = 0;
 
 var macHover = null;
 
@@ -52,6 +70,9 @@ const FLOOR_MIN = 0;
 const FLOOR_MAX = 60;
 const FLOOR_STEP = 20;
 
+var lockTime = null;
+const LOCK_PERIOD = 2000;
+
 const LAYER_CONF = {
     x: 850,
     y: 100,
@@ -62,8 +83,6 @@ const LAYER_CONF = {
     arrowStart: -20,
     arrowEnd: -10
 };
-
-var background1 = null;
 
 const API_URI = 'http://35.231.19.141:5000';
 const ACTORS_URI = API_URI + '/actors';
@@ -83,7 +102,7 @@ window.onload = start;
 
 function reload() {
     calcStats();
-    if (startup) {
+    if (state === 'splash') {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawSplashScreen();
     } else {
@@ -100,6 +119,11 @@ function reload() {
             layerShiftPhase = 0;
             targetFloor = null;
             layerShiftPhase = 0;
+            if (state === 'fadein') {
+                setTimeout(() => {
+                    state = 'waiting'
+                }, 500);
+            }
         }
     }
     if (phase <= 1 && !loading) {
@@ -130,32 +154,54 @@ function calcStats() {
     stats = newStats;
 }
 
+var updateRequest = null;
+
+function isLocked() {
+    if(lockTime === null) return false;
+    // console.log(new Date().getTime() - lockTime + LOCK_PERIOD);
+    return new Date().getTime() < lockTime + LOCK_PERIOD;
+}
+
+function lock() {
+    lockTime = new Date().getTime();
+}
+
 function loadNewPoints() {
+    if(isLocked()) {
+        loading = false;
+        return;
+    }
     try {
-        $.getJSON({
+        updateRequest = $.getJSON({
             url: ACTORS_URI,
-            success: nextPhase
+            success: nextPhase,
+            error: () => {loading = false}
         });
     } catch (e) {
         console.error('failed to access api', e);
+        loading = false;
     }
 }
 
 function nextPhase(apiPoints) {
-    if (startup) {
+    if(isLocked()) {
+        loading = false;
+        return;
+    }
+    if (state === 'splash') {
         layerShiftPhase = 0.5;
         floor = 40;
         targetFloor = 20;
         floorScrollDirection = 1;
         layerShift = -CANVAS_HEIGHT;
+        state = 'fadein';
     }
-    startup = false;
 
-    for (let mac in points) {
-        if (!points.hasOwnProperty(mac)) continue;
-        points[mac].state = 'standing';
-        delete points[mac].prev;
-    }
+    Object.values(points).forEach(point => {
+        if (point.state !== 'infected') {
+            point.state = 'standing';
+        }
+    });
 
     for (let mac in apiPoints) {
         if (!apiPoints.hasOwnProperty(mac)) continue;
@@ -165,19 +211,30 @@ function nextPhase(apiPoints) {
             const oldPoint = points[mac];
             oldPoint['prev'] = oldPoint['coord'];
             oldPoint['coord'] = newPoint['coord'];
-            if (oldPoint['role'] !== newPoint['role']) {
-                console.log('CAPTURED');
-                oldPoint.state = 'captured';
+            if (oldPoint.state !== 'infected' && oldPoint.state !== 'healed') {
+                if (oldPoint['role'] !== newPoint['role']) {
+                    oldPoint.state = 'captured';
+                } else {
+                    oldPoint.state = 'moving';
+                }
+                oldPoint['role'] = newPoint['role'];
             } else {
                 oldPoint.state = 'moving';
             }
-            oldPoint['role'] = newPoint['role'];
+            if (state !== 'running') {
+                oldPoint['state'] = 'new';
+                delete oldPoint['prev'];
+            }
             oldPoint['last_updated'] = newPoint['last_updated'];
         } else {
             newPoint.state = 'new';
             newPoint.fadeInDelay = Math.random() * Math.min(1 - FADE_PHASE_SHARE, FADE_SHIFT_MAX);
             points[mac] = newPoint;
         }
+    }
+
+    if (state === 'waiting') {
+        state = 'running';
     }
 
     const macsToDelete = [];
@@ -190,7 +247,7 @@ function nextPhase(apiPoints) {
     }
     for (var mac in macsToDelete) {
         console.log('DELETING MAC', mac);
-        points[mac] = undefined;
+        delete points[mac];
     }
     loading = false;
     phase = 0;
@@ -205,7 +262,6 @@ function drawSplashScreen() {
 
     for (var i = 0; i < SPLASH_COUNT; i++) {
         spinnerPoints[i].coord[Y] = SPLASH_Y + Math.sin(splashPhase + i / 2) * SPLASH_AMPLITUDE;
-        // spinnerPoints[i].role = Math.sin(splashPhase + i / 2) >= 0 ? 'infected' : 'passive'
     }
     spinnerPoints.forEach(point => {
         drawPoint(point);
@@ -240,11 +296,13 @@ function gotToFloor(floorRequest) {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(background1, IMG_SHIFT_X, IMG_SHIFT_Y + layerShift, background1.width * IMG_SCALE, background1.height * IMG_SCALE);
-
-    for (let mac in points) {
-        if (!points.hasOwnProperty(mac)) continue;
-        drawPoint(points[mac]);
+    ctx.drawImage(backgrounds[floor], IMG_SHIFT_X[floor], IMG_SHIFT_Y[floor] + layerShift,
+        backgrounds[floor].width * IMG_SCALE[floor], backgrounds[floor].height * IMG_SCALE[floor]);
+    if (state === 'running') {
+        for (let mac in points) {
+            if (!points.hasOwnProperty(mac)) continue;
+            drawPoint(points[mac]);
+        }
     }
     addTextInfo();
     drawLayers();
@@ -284,32 +342,41 @@ function addTextInfo() {
     ctx.fillStyle = textColor;
     ctx.fillText("Infected people: " + stats[floor].infected, 850, 70);
     ctx.fillRect(835, 63, 7, 7);
-    // ctx.fillText("MAC: " + macHover, 850, 90);
 }
 
 function infect(mac) {
     if (!mac) {
+        // lock();
         $.get(INFECT_URI + '?floor=' + floor, infected);
     } else {
+        // lock();
         $.get(INFECT_URI + '?floor=' + floor + '&mac=' + mac, infected);
     }
 }
 
 function infected(data) {
-    console.log('data', data);
     points[data].role = 'infected';
+    points[data].state = 'infected';
 }
 
 function heal() {
     for (let mac in points) {
         if (!points.hasOwnProperty(mac)) continue;
-        points[mac].state = 'passive';
+        // points[mac].role = 'passive';
+        points[mac].timeHealed = new Date().getTime() + Math.random() * 800;
+        points[mac].state = 'healed';
     }
+    lock();
     $.get(HEAL_URI);
 }
 
 
 function drawPoint(point) {
+    if(point.state === 'healed' && point.timeHealed < new Date().getTime()) {
+        point.role = 'passive';
+        point.state = 'moving';
+    }
+
     if (point.coord[Z] !== floor) return;
 
     var x, y, size;
@@ -430,20 +497,32 @@ function drawLayer(x, y, index) {
     }
 }
 
+backgrounds = {};
+
 function loadBackground() {
     ctx.webkitImageSmoothingEnabled = false;
     ctx.mozImageSmoothingEnabled = false;
     ctx.imageSmoothingEnabled = false;
 
-    background1 = new Image();
-    background1.onload = function () {
-        console.log('Background loaded');
-        setInterval(reload, REFRESH_PERIOD);
-    };
-    background1.src = 'images/floor1.jpg';
+    for (var i = 0; i <= 60; i += 20) {
+        backgrounds[i] = new Image();
+        backgrounds[i].onload = backgroundLoaded;
+        backgrounds[i].src = 'images/f' + i + '.png';
+    }
+}
+
+function backgroundLoaded() {
+    backgroundsLoaded++;
+    console.log('backgroundsLoaded', backgroundsLoaded);
+    if (backgroundsLoaded < 4) return;
+    console.log('All backgrounds loaded');
+    setInterval(reload, REFRESH_PERIOD);
 }
 
 function hoverClosestPoint(x, y) {
+    if (state !== 'running') {
+        return;
+    }
     macHover = findClosestPoint(x, y);
 }
 
@@ -500,8 +579,8 @@ function handleMouse(xM, yM) {
         y += LAYER_CONF.shift;
     }
 
-    if(xM > MEDICINE_X - CROSS_SIZE / 2 && xM < MEDICINE_X + CROSS_SIZE / 2
-    && yM > MEDICINE_Y - CROSS_SIZE / 2 && yM < MEDICINE_Y + CROSS_SIZE /2) {
+    if (xM > MEDICINE_X - CROSS_SIZE / 2 && xM < MEDICINE_X + CROSS_SIZE / 2
+        && yM > MEDICINE_Y - CROSS_SIZE / 2 && yM < MEDICINE_Y + CROSS_SIZE / 2) {
         heal();
         return;
     }
