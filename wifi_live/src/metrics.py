@@ -1,10 +1,12 @@
 import os
 import time
+import traceback
 from queue import Queue, Empty
 from typing import Iterable
 
 from influxdb import InfluxDBClient
 import urllib3
+from influxdb.exceptions import InfluxDBClientError
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -36,7 +38,11 @@ class Reporter:
                     break
             if len(points) > 0:
                 print(len(points))
-                self.client.write_points(points, time_precision='s')
+                try:
+                    self.client.write_points(points, time_precision='s')
+                except InfluxDBClientError:
+                    traceback.print_exc()
+
             else:
                 time.sleep(1)
 
