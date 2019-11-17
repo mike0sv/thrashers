@@ -70,6 +70,9 @@ const FLOOR_MIN = 0;
 const FLOOR_MAX = 60;
 const FLOOR_STEP = 20;
 
+var lockTime = null;
+const LOCK_PERIOD = 2000;
+
 const LAYER_CONF = {
     x: 850,
     y: 100,
@@ -153,7 +156,21 @@ function calcStats() {
 
 var updateRequest = null;
 
+function isLocked() {
+    if(lockTime === null) return false;
+    // console.log(new Date().getTime() - lockTime + LOCK_PERIOD);
+    return new Date().getTime() < lockTime + LOCK_PERIOD;
+}
+
+function lock() {
+    lockTime = new Date().getTime();
+}
+
 function loadNewPoints() {
+    if(isLocked()) {
+        loading = false;
+        return;
+    }
     try {
         updateRequest = $.getJSON({
             url: ACTORS_URI,
@@ -167,6 +184,10 @@ function loadNewPoints() {
 }
 
 function nextPhase(apiPoints) {
+    if(isLocked()) {
+        loading = false;
+        return;
+    }
     if (state === 'splash') {
         layerShiftPhase = 0.5;
         floor = 40;
@@ -325,10 +346,10 @@ function addTextInfo() {
 
 function infect(mac) {
     if (!mac) {
-        updateRequest.abort();
+        // lock();
         $.get(INFECT_URI + '?floor=' + floor, infected);
     } else {
-        updateRequest.abort();
+        // lock();
         $.get(INFECT_URI + '?floor=' + floor + '&mac=' + mac, infected);
     }
 }
@@ -345,7 +366,7 @@ function heal() {
         points[mac].timeHealed = new Date().getTime() + Math.random() * 800;
         points[mac].state = 'healed';
     }
-    updateRequest.abort();
+    lock();
     $.get(HEAL_URI);
 }
 
