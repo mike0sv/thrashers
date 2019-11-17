@@ -1,6 +1,22 @@
-const IMG_SCALE = 0.46;
-const IMG_SHIFT_X = 0;
-const IMG_SHIFT_Y = 0;
+const IMG_SCALE = {
+    0: 0.43,
+    20: 0.62,
+    40: 0.64,
+    60: 0.68
+};
+
+const IMG_SHIFT_X = {
+    0: 25,
+    20: 0,
+    40: -5,
+    60: 58
+};
+const IMG_SHIFT_Y = {
+    0: -20,
+    20: 0,
+    40: -3,
+    60: 0
+};
 const CANVAS_HEIGHT = 700;
 const DISTANCE_THRESHOLD = 10;
 
@@ -34,7 +50,9 @@ var ctx = null;
 var phase = 0;
 var layerShiftPhase = 0;
 var loading = false;
-var startup = true;
+var state = 'splash';
+
+var backgroundsLoaded = 0;
 
 var macHover = null;
 
@@ -63,8 +81,6 @@ const LAYER_CONF = {
     arrowEnd: -10
 };
 
-var background1 = null;
-
 const API_URI = 'http://35.231.19.141:5000';
 const ACTORS_URI = API_URI + '/actors';
 const INFECT_URI = API_URI + '/infect';
@@ -83,7 +99,7 @@ window.onload = start;
 
 function reload() {
     calcStats();
-    if (startup) {
+    if (state === 'splash') {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawSplashScreen();
     } else {
@@ -100,6 +116,11 @@ function reload() {
             layerShiftPhase = 0;
             targetFloor = null;
             layerShiftPhase = 0;
+            if (state === 'fadein') {
+                setTimeout(() => {
+                    state = 'waiting'
+                }, 500);
+            }
         }
     }
     if (phase <= 1 && !loading) {
@@ -141,21 +162,29 @@ function loadNewPoints() {
     }
 }
 
+function checkStates() {
+    var news = 0;
+    Object.values(points).forEach(point => {
+        if (point.state === 'new') {
+            news++;
+        }
+    });
+    console.log('news', news);
+}
+
 function nextPhase(apiPoints) {
-    if (startup) {
+    if (state === 'splash') {
         layerShiftPhase = 0.5;
         floor = 40;
         targetFloor = 20;
         floorScrollDirection = 1;
         layerShift = -CANVAS_HEIGHT;
+        state = 'fadein';
     }
-    startup = false;
 
-    for (let mac in points) {
-        if (!points.hasOwnProperty(mac)) continue;
-        points[mac].state = 'standing';
-        delete points[mac].prev;
-    }
+    Object.values(points).forEach(point => {
+        point.state = 'standing';
+    });
 
     for (let mac in apiPoints) {
         if (!apiPoints.hasOwnProperty(mac)) continue;
@@ -166,18 +195,25 @@ function nextPhase(apiPoints) {
             oldPoint['prev'] = oldPoint['coord'];
             oldPoint['coord'] = newPoint['coord'];
             if (oldPoint['role'] !== newPoint['role']) {
-                console.log('CAPTURED');
                 oldPoint.state = 'captured';
             } else {
                 oldPoint.state = 'moving';
             }
             oldPoint['role'] = newPoint['role'];
+            if (state !== 'running') {
+                oldPoint['state'] = 'new';
+                delete oldPoint['prev'];
+            }
             oldPoint['last_updated'] = newPoint['last_updated'];
         } else {
             newPoint.state = 'new';
             newPoint.fadeInDelay = Math.random() * Math.min(1 - FADE_PHASE_SHARE, FADE_SHIFT_MAX);
             points[mac] = newPoint;
         }
+    }
+
+    if (state === 'waiting') {
+        state = 'running';
     }
 
     const macsToDelete = [];
@@ -190,7 +226,7 @@ function nextPhase(apiPoints) {
     }
     for (var mac in macsToDelete) {
         console.log('DELETING MAC', mac);
-        points[mac] = undefined;
+        delete points[mac];
     }
     loading = false;
     phase = 0;
@@ -205,7 +241,6 @@ function drawSplashScreen() {
 
     for (var i = 0; i < SPLASH_COUNT; i++) {
         spinnerPoints[i].coord[Y] = SPLASH_Y + Math.sin(splashPhase + i / 2) * SPLASH_AMPLITUDE;
-        // spinnerPoints[i].role = Math.sin(splashPhase + i / 2) >= 0 ? 'infected' : 'passive'
     }
     spinnerPoints.forEach(point => {
         drawPoint(point);
@@ -240,11 +275,13 @@ function gotToFloor(floorRequest) {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(background1, IMG_SHIFT_X, IMG_SHIFT_Y + layerShift, background1.width * IMG_SCALE, background1.height * IMG_SCALE);
-
-    for (let mac in points) {
-        if (!points.hasOwnProperty(mac)) continue;
-        drawPoint(points[mac]);
+    ctx.drawImage(backgrounds[floor], IMG_SHIFT_X[floor], IMG_SHIFT_Y[floor] + layerShift,
+        backgrounds[floor].width * IMG_SCALE[floor], backgrounds[floor].height * IMG_SCALE[floor]);
+    if (state === 'running') {
+        for (let mac in points) {
+            if (!points.hasOwnProperty(mac)) continue;
+            drawPoint(points[mac]);
+        }
     }
     addTextInfo();
     drawLayers();
@@ -284,6 +321,9 @@ function addTextInfo() {
     ctx.fillStyle = textColor;
     ctx.fillText("Infected people: " + stats[floor].infected, 850, 70);
     ctx.fillRect(835, 63, 7, 7);
+
+    // ctx.fillText("123 sec since infestation " , 850, 30);
+
     // ctx.fillText("MAC: " + macHover, 850, 90);
 }
 
@@ -296,7 +336,6 @@ function infect(mac) {
 }
 
 function infected(data) {
-    console.log('data', data);
     points[data].role = 'infected';
 }
 
@@ -430,20 +469,32 @@ function drawLayer(x, y, index) {
     }
 }
 
+backgrounds = {};
+
 function loadBackground() {
     ctx.webkitImageSmoothingEnabled = false;
     ctx.mozImageSmoothingEnabled = false;
     ctx.imageSmoothingEnabled = false;
 
-    background1 = new Image();
-    background1.onload = function () {
-        console.log('Background loaded');
-        setInterval(reload, REFRESH_PERIOD);
-    };
-    background1.src = 'images/floor1.jpg';
+    for (var i = 0; i <= 60; i += 20) {
+        backgrounds[i] = new Image();
+        backgrounds[i].onload = backgroundLoaded;
+        backgrounds[i].src = 'images/f' + i + '.png';
+    }
+}
+
+function backgroundLoaded() {
+    backgroundsLoaded++;
+    console.log('backgroundsLoaded', backgroundsLoaded);
+    if (backgroundsLoaded < 4) return;
+    console.log('All backgrounds loaded');
+    setInterval(reload, REFRESH_PERIOD);
 }
 
 function hoverClosestPoint(x, y) {
+    if (state !== 'running') {
+        return;
+    }
     macHover = findClosestPoint(x, y);
 }
 
@@ -500,8 +551,8 @@ function handleMouse(xM, yM) {
         y += LAYER_CONF.shift;
     }
 
-    if(xM > MEDICINE_X - CROSS_SIZE / 2 && xM < MEDICINE_X + CROSS_SIZE / 2
-    && yM > MEDICINE_Y - CROSS_SIZE / 2 && yM < MEDICINE_Y + CROSS_SIZE /2) {
+    if (xM > MEDICINE_X - CROSS_SIZE / 2 && xM < MEDICINE_X + CROSS_SIZE / 2
+        && yM > MEDICINE_Y - CROSS_SIZE / 2 && yM < MEDICINE_Y + CROSS_SIZE / 2) {
         heal();
         return;
     }
