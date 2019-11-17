@@ -345,8 +345,8 @@ function heal() {
         points[mac].timeHealed = new Date().getTime() + Math.random() * 800;
         points[mac].state = 'healed';
     }
-    $.get(HEAL_URI);
     updateRequest.abort();
+    $.get(HEAL_URI);
 }
 
 
