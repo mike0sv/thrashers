@@ -74,7 +74,7 @@ class Reporter:
 
     def report_event(self, agent: 'Agent', new=False):
         points = [
-            self._row('events', {'mac': agent.mac, 'new': str(new)}, {'new': new}, agent.survived_for)
+            self._row('events', {'mac': agent.mac, 'new': str(new)}, {'new': new}, agent.last_updated)
         ]
         self.queue.put(points)
         # self.client.write_points(points, time_precision='s')
